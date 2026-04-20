@@ -28,7 +28,6 @@ import functools
 import glob
 import gzip
 import hashlib
-import http.client
 import json
 import logging
 import os
@@ -1625,23 +1624,22 @@ class _AptDpkgPackageInfo(PackageInfo):
         update = False
         url = f"{self._get_mirror(arch)}/dists/{dist}/Contents-{arch}.gz"
         if mtime:
-            # HTTPConnection requires server name e.g.
-            # archive.ubuntu.com
-            server = urllib.parse.urlparse(url)[1]
-            conn = http.client.HTTPConnection(server)
-            conn.request("HEAD", urllib.parse.urlparse(url)[2])
-            res = conn.getresponse()
-            modified_str = res.getheader("last-modified", None)
-            if modified_str:
-                modified = datetime.datetime.strptime(
-                    modified_str, "%a, %d %b %Y %H:%M:%S %Z"
-                )
-                update = modified > datetime.datetime.fromtimestamp(mtime)
-            else:
+            req = urllib.request.Request(url, method="HEAD")
+            try:
+                with urllib.request.urlopen(req) as res:
+                    modified_str = res.getheader("last-modified", None)
+                    if modified_str:
+                        modified = datetime.datetime.strptime(
+                            modified_str, "%a, %d %b %Y %H:%M:%S %Z"
+                        )
+                        update = modified > datetime.datetime.fromtimestamp(mtime)
+                    else:
+                        update = True
+                    # don't update the file if it is empty
+                    if res.getheader("content-length", None) == "40":
+                        update = False
+            except OSError:
                 update = True
-            # don't update the file if it is empty
-            if res.getheader("content-length", None) == "40":
-                update = False
         else:
             update = True
         if update:
